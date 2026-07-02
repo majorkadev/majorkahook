@@ -371,13 +371,22 @@ void __fastcall hkGradientH(void* ecx, void* edx, int x, int y, int h, int w, in
     return _oGH(ecx, x, y, h, w, g_color2, g_color3);
 }
 
+static bool SafeReadPtr(const void* ptr, size_t size) {
+    if (!ptr) return false;
+    MEMORY_BASIC_INFORMATION mbi;
+    if (VirtualQuery(ptr, &mbi, sizeof(mbi)) == 0) return false;
+    if (mbi.State != MEM_COMMIT) return false;
+    if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+    return true;
+}
+
 void ApplyRendererHook() {
     static bool hooked = false;
     if (hooked) return;
 
-    if (g_renderer && !IsBadReadPtr(g_renderer, sizeof(void*))) {
+    if (g_renderer && SafeReadPtr(g_renderer, sizeof(void*))) {
         void** vtable = *(void***)g_renderer;
-        if (vtable && !IsBadReadPtr(vtable, sizeof(void*) * 8)) {
+        if (vtable && SafeReadPtr(vtable, sizeof(void*) * 8)) {
             DWORD oldProtect;
             if (VirtualProtect(&vtable[7], sizeof(void*), PAGE_EXECUTE_READWRITE, &oldProtect)) {
                 _oGH = (_GHFn)vtable[7];
@@ -573,7 +582,7 @@ static void render_hook_impl(void* ecx, void* edx) {
     if (!g_renderer || !g_animating || g_animation_done)
         return;
 
-    if (IsBadReadPtr(g_renderer, 4)) {
+    if (!SafeReadPtr(g_renderer, 4)) {
         g_animating = false;
         return;
     }
@@ -639,6 +648,7 @@ static bool install_raw_hook(void* target, void* hook, uint8_t* orig_bytes, size
     *(uint8_t*)target = 0xE9;
     *(uintptr_t*)((uintptr_t)target + 1) = hook_rel;
     VirtualProtect(target, byte_count, old, &old);
+    FlushInstructionCache(GetCurrentProcess(), target, byte_count);
     return true;
 }
 
@@ -678,6 +688,7 @@ static LONG __stdcall skeet_exception_handler(EXCEPTION_POINTERS* ExceptionInfo)
                         else if (opcode == 0xE8) skip = 5;
                         memset((void*)exception_ctx->Eip, 0x90, skip);
                         VirtualProtect((void*)exception_ctx->Eip, 8, oldProt, &oldProt);
+                        FlushInstructionCache(GetCurrentProcess(), (void*)exception_ctx->Eip, 8);
                     }
                     exception_ctx->Eax = 0;
                     exception_ctx->Ecx = 0;
@@ -873,6 +884,7 @@ bool skeet_t::map()
 
 bool skeet_t::fix_imports()
 {
+    std::unordered_map<std::string, HMODULE> module_cache;
     for (auto& _import : imports) {
         auto old_addr = 0;
 
@@ -893,7 +905,15 @@ bool skeet_t::fix_imports()
 
         auto& export_ = exports[old_addr];
 
-        auto import_addr = (u32)(GetProcAddress(LoadLibraryA(export_.lib.c_str()), export_.name.c_str()));
+        HMODULE hMod = nullptr;
+        if (module_cache.find(export_.lib) != module_cache.end()) {
+            hMod = module_cache[export_.lib];
+        } else {
+            hMod = LoadLibraryA(export_.lib.c_str());
+            module_cache[export_.lib] = hMod;
+        }
+
+        auto import_addr = (u32)(GetProcAddress(hMod, export_.name.c_str()));
 
         if (!import_addr) {
             LPRINT("(fix_imports) failed to get " << std::hex << export_.lib.c_str() << " " << export_.name.c_str() << "\n");
@@ -928,7 +948,7 @@ static int __fastcall crcCheck(int base, int size) {
 
 bool skeet_t::extra()
 {
-    const uint32_t hashes[] = {
+    static const uint32_t hashes[] = {
         0xC0BA92C9,
         0xBBFFA7E0,
         0xA42BE2F8
@@ -938,6 +958,8 @@ bool skeet_t::extra()
         int c = 0;
         while (*(uint32_t*)(0x4346D4CC) == 0 && c < 3) {
             *(uint32_t*)(0x4346D4CC) = hashes[c];
+            c++;
+            Sleep(10);
         }
         }).detach();
 
@@ -1203,7 +1225,7 @@ bool skeet_t::extra()
                 insertWasPressed = false;
             }
             
-            if (g_pRendererAddress && !IsBadReadPtr(g_pRendererAddress, sizeof(void*))) {
+            if (g_pRendererAddress && SafeReadPtr(g_pRendererAddress, sizeof(void*))) {
                 g_renderer = *g_pRendererAddress;
             }
             
@@ -1215,7 +1237,7 @@ bool skeet_t::extra()
     void* sclassMatch = PatternScan(GetModuleHandleW(L"majorkahook.dll"), "A1 ?? ?? ?? ?? 83 64 24 04 00 89 54 24 18 89 44 24 10 53 56");
     if (sclassMatch) {
         void* sclassPtr = *(void**)((uintptr_t)sclassMatch + 1);
-        if (!IsBadReadPtr(sclassPtr, sizeof(void*))) {
+        if (SafeReadPtr(sclassPtr, sizeof(void*))) {
             g_pRendererAddress = reinterpret_cast<IRendererOverlay**>(sclassPtr);
         }
     }
