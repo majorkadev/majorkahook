@@ -85,13 +85,17 @@ static void InstallLoadConfigHook() {
 #if defined(SDK_GLOBALS_IMP) || defined(SDK_CLIENT_IMP)
 static SetClanTagFn g_oSetClanTag_Trampoline = nullptr;
 static void __fastcall hkSetClanTag_Detour(const char* tag, const char* name) {
-    if (tag && name) {
+    if (tag && name && tag[0] != '\0') {
         const char* majorka_tag = mJrKaKkAka::GetNextMajorkaClanTagFrame(300);
         if (g_oSetClanTag_Trampoline) {
             g_oSetClanTag_Trampoline(majorka_tag, majorka_tag);
             return;
         }
     }
+    else {
+        mJrKaKkAka::ResetMajorkaClanTagFrame();
+    }
+
     if (g_oSetClanTag_Trampoline) {
         g_oSetClanTag_Trampoline(tag, name);
     }

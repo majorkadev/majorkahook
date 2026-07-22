@@ -39,10 +39,16 @@ namespace mJrKaKkAka {
         };
     }
 
-    inline const char* GetNextMajorkaClanTagFrame(DWORD interval_ms = 300) {
+    inline const char* GetNextMajorkaClanTagFrame(DWORD interval_ms = 300, bool reset = false) {
         static const auto frames = GetMajorkaClanTagFrames();
         static size_t current_index = 0;
         static DWORD last_tick = 0;
+
+        if (reset) {
+            current_index = 0;
+            last_tick = 0;
+            return "";
+        }
 
         DWORD now = GetTickCount();
         if (now - last_tick >= interval_ms) {
@@ -50,6 +56,10 @@ namespace mJrKaKkAka {
             last_tick = now;
         }
         return frames[current_index].c_str();
+    }
+
+    inline void ResetMajorkaClanTagFrame() {
+        GetNextMajorkaClanTagFrame(300, true);
     }
 }
 
