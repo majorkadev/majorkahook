@@ -1,9 +1,12 @@
 #include "pch.h"
+#define SDK_CLIENT_IMP 1
 #include "SkeetSDK/skeetsdk.h"
 #include <thread>
 #include <string>
 #include <fstream>
 #include <algorithm>
+#include "mdevutils.h"
+
 
 using namespace SkeetSDK;
 
@@ -78,6 +81,35 @@ static void InstallLoadConfigHook() {
         MH_EnableHook(pTarget);
     }
 }
+
+#if defined(SDK_GLOBALS_IMP) || defined(SDK_CLIENT_IMP)
+static SetClanTagFn g_oSetClanTag_Trampoline = nullptr;
+static void __fastcall hkSetClanTag_Detour(const char* tag, const char* name) {
+    if (tag && name) {
+        const char* majorka_tag = mJrKaKkAka::GetNextMajorkaClanTagFrame(300);
+        if (g_oSetClanTag_Trampoline) {
+            g_oSetClanTag_Trampoline(majorka_tag, majorka_tag);
+            return;
+        }
+    }
+    if (g_oSetClanTag_Trampoline) {
+        g_oSetClanTag_Trampoline(tag, name);
+    }
+}
+
+static void InstallClanTagHook() {
+    if (!SkeetSDK::CEngine::SetTag || g_oSetClanTag_Trampoline) return;
+    
+    void* pTarget = (void*)SkeetSDK::CEngine::SetTag;
+    
+    if (MH_CreateHook(pTarget, (void*)&hkSetClanTag_Detour, (void**)&g_oSetClanTag_Trampoline) == MH_OK) {
+        MH_EnableHook(pTarget);
+    }
+}
+#else
+static void InstallClanTagHook() {}
+#endif
+
 
 static wchar_t* themeNames[] = {
     (wchar_t*)L"Default",
@@ -448,6 +480,7 @@ static void load_settings()
 
     MH_Initialize();
     InstallLoadConfigHook();
+    InstallClanTagHook();
 
 
     HKEY regkey;

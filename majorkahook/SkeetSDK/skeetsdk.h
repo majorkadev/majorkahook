@@ -1603,6 +1603,7 @@ namespace SkeetSDK {
 		friend class Client;
 		static void**** EngineCtx;
 		static CommandsInfo** CommandsCtx;
+	public:
 		static SetClanTagFn SetTag;
 		static unsigned int* PredComm;
 		static bool IsInGame();
